@@ -13,7 +13,8 @@ from helper import create_video_writer
 
 
 # define some parameters
-conf_threshold = 0.5
+absence_counters = {}
+conf_threshold = 0.6
 max_cosine_distance = 0.4
 nn_budget = None
 points = [deque(maxlen=32) for _ in range(1000)] # list of deques to store the points
@@ -34,13 +35,23 @@ counter_B_car = 0
 counter_B_bus = 0
 counter_B_motorcycle = 0
 
-
+class_counters = {
+    'car': 0,
+    'bus': 0,
+    'motorcycle': 0,
+    'truck': 0,
+    'threewheel': 0,
+    'van': 0,
+    'Hiace': 0,
+    'Rickshaw': 0,
+    'Tractor': 0,
+    'vehicle': 0
+}
 # Initialize the video capture and the video writer objects
 video_cap = cv2.VideoCapture("1.mp4")
 writer = create_video_writer(video_cap, "output.mp4")
 
 # Initialize the YOLOv8 model using the default weights
-#model = YOLO("yolov8s.pt")
 model = YOLO('C:/MSc Project 2/dataset/roboflow/runs/detect/my_model32/weights/last.pt')
 # Initialize the deep sort tracker
 model_filename = "config/mars-small128.pb"
@@ -49,10 +60,6 @@ metric = nn_matching.NearestNeighborDistanceMetric(
     "cosine", max_cosine_distance, nn_budget)
 tracker = Tracker(metric)
 
-# load the COCO class labels the YOLO model was trained on
-# classes_path = "config/coco.names"
-# with open(classes_path, "r") as f:
-#     class_names = f.read().strip().split("\n")
 
 class_names = ['bus', 'car', 'motorcycle', 'truck', 'threewheel', 'van', 'Hiace', 'Rickshaw', 'Tractor', 'vehicle']
 
@@ -131,12 +138,14 @@ while True:
     # run the tracker on the detections
     tracker.predict()
     tracker.update(dets)
+    active_track_ids = set()
 
     # loop over the tracked objects
     for track in tracker.tracks:
         if not track.is_confirmed() or track.time_since_update > 1:
             continue
 
+        active_track_ids.add(track.track_id)
         # get the bounding box of the object, the name
         # of the object, and the track id
         bbox = track.to_tlbr()
@@ -166,10 +175,8 @@ while True:
 
         center_x = int((x1 + x2) / 2)
         center_y = int((y1 + y2) / 2)
-        #print('x', center_x, 'y', center_y)
         # append the center point of the current object to the points list
         points[track_id].append((center_x, center_y))
-        #print(points, 'tracking-id', track_id)
 
         cv2.circle(frame, (center_x, center_y), 4, (0, 255, 0), -1)
 
@@ -188,50 +195,40 @@ while True:
         last_point_y = points[track_id][0][1]
         cv2.circle(frame, (int(last_point_x), int(last_point_y)), 4, (255, 0, 255), -1)
 
-        # if the y coordinate of the center point is below the line, and the x coordinate is
-        # between the start and end points of the line, and the the last point is above the line,
-        # increment the total number of cars crossing the line and remove the center points from the list
-        if track_id not in tracker_list:
+        if (class_name, track_id) not in tracker_list:
             if center_y > start_line_A[1] and start_line_A[0] < center_x < end_line_A[0] and last_point_y < start_line_A[1]:
-                print('y', center_y, '   x', center_x, '  countimngggggg')
-                tracker_list.append(track_id)
+                class_name = track.get_class()
+                tracker_list.append((class_name, track_id))
+                if class_name in class_counters:
+                    class_counters[class_name] += 1
                 counter_A += 1
-                #points[track_id].clear()
             elif center_y > start_line_B[1] and start_line_B[0] < center_x < end_line_B[0] and last_point_y < start_line_A[1]:
                 counter_B += 1
                 points[track_id].clear()
             elif center_y > start_line_C[1] and start_line_C[0] < center_x < end_line_C[0] and last_point_y < start_line_A[1]:
                 counter_C += 1
                 points[track_id].clear()
-        #print('last_point ',last_point_y)
-        #print('centre_y', center_y)
-        for id in tracker_list:
-            print('checking id')
-            center_points_deque = points[id]
-            print('id ', id)
-            if len(center_points_deque) > 0:
-                # Get the last center point in the deque (center_x, center_y)
-                last_center_x, last_center_y = center_points_deque[-1]
-                print(last_center_x, last_center_y)
 
-                if last_center_y > 550:
-            #if center_y > start_line_A[1]:
-                     print('problem')
-                     counter_A -= 1
-                     points[track_id].clear()
-                     print('here1')
-                     tracker_list.remove(id)
-                     print('here2')
-            # elif center_y > start_line_B[1]:
-            #     counter_B -= 1
-            # elif center_y > start_line_C[1]:
-            #     counter_C -= 1
+        for class_name, id in tracker_list:
+            if id not in active_track_ids:
+                if id not in absence_counters:
+                    absence_counters[id] = 1
+                else:
+                    absence_counters[id] += 1
+
+            if absence_counters.get(id, 0) >= 20:
+                class_nam = [item[0] for item in tracker_list if item[1] == id]
+                class_name = class_nam[0]
+                if class_name in class_counters:
+                    class_counters[class_name] -= 1
+                else:
+                    class_counters[class_name] -= 1
+
+                # Reset the absence counter
+                absence_counters[id] = 0
+                tracker_list = [item for item in tracker_list if item[1] != id]
 
         print('Tracker list', tracker_list)
-
-    ############################################################
-    ### Some post-processing to display the results          ###
-    ############################################################
 
     # end time to compute the fps
     end = datetime.datetime.now()
@@ -244,8 +241,13 @@ while True:
     cv2.putText(frame, "A", (10, 483), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
     cv2.putText(frame, "B", (530, 483), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
     cv2.putText(frame, "C", (910, 483), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-    cv2.putText(frame, f"Counts: {counter_A}", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-
+    cv2.putText(frame, f"Counts: {counter_A}", (100, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+    cv2.putText(frame, f"Car Count: {class_counters['car']}", (100, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+    cv2.putText(frame, f"Bus Count: {class_counters['bus']}", (100, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+    cv2.putText(frame, f"Motorcycle Count: {class_counters['motorcycle']}", (100, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                (0, 0, 255), 2)
+    cv2.putText(frame, f"Truck Count: {class_counters['truck']}", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255),
+                2)
     cv2.putText(frame, f"{counter_B}", (620, 483), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
     cv2.putText(frame, f"{counter_C}", (1040, 483), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
 
