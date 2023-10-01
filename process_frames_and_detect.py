@@ -1,20 +1,33 @@
-
 import datetime
 import cv2
 import numpy as np
 from collections import deque
 from deep_sort.deep_sort.detection import Detection
+from running_code.traffic_test import test_traffic
 
-
-# Define some parameters
+# Parameters for object tracking and counting
 absence_counters = {}
 acc_threshold = 0.4
 max_cosine_distance = 0.4
 nn_budget = None
 points = [deque(maxlen=32) for _ in range(1000)]
+log_file_path = 'tracking_log.txt'
+traffic_threshold = 3
 
-first_line = (200, 280)
-first_line_end = (680, 280)
+#sample1.mp4
+first_line = (200, 290)
+first_line_end = (680, 290)
+
+#sample2.mp4
+# first_line = (200, 400)
+# first_line_end = (680, 400)
+
+#sample3
+# first_line = (200, 380)
+# first_line_end = (750, 380)
+
+
+class_threshold = {'car': 60, 'motorcycle': 50, 'truck': 80, 'bus': 100, 'Rickshaw':70, 'van':70}
 
 class_counters = {
     'car': 0,
@@ -44,7 +57,7 @@ def process_video(video_cap, writer, model, encoder, tracker, class_names, color
             break
 
         results = model(frame)
-
+        print(start)
         for result in results:
             bboxes = []
             accuracy_scores = []
@@ -82,6 +95,7 @@ def process_video(video_cap, writer, model, encoder, tracker, class_names, color
             class_id = class_names.index(class_name)
             color = colors[class_id]
             blue, green, red = int(color[0]), int(color[1]), int(color[2])
+
             text = str(track_id) + " - " + class_name
             cv2.rectangle(frame, (x1, y1), (x2, y2), (blue, green, red), 3)
             cv2.rectangle(frame, (x1 - 1, y1 - 20),
@@ -107,13 +121,14 @@ def process_video(video_cap, writer, model, encoder, tracker, class_names, color
             cv2.circle(frame, (int(last_point_x), int(last_point_y)), 4, (255, 0, 255), -1)
 
             if (class_name, track_id) not in tracker_list:
-                if center_y > first_line[1] > last_point_y and first_line[0] < center_x < first_line_end[0]:
+                if center_y > first_line[1] and first_line[0] < center_x < first_line_end[0]:
                     class_name = track.get_class()
                     tracker_list.append((class_name, track_id))
                     if class_name in class_counters:
                         class_counters[class_name] += 1
 
             for class_name, id in tracker_list:
+                print(f'tracker_list: {tracker_list} and active ids : {active_track_ids}')
                 if id not in active_track_ids:
                     if id not in absence_counters:
                         absence_counters[id] = 1
@@ -122,7 +137,7 @@ def process_video(video_cap, writer, model, encoder, tracker, class_names, color
                 else:
                     absence_counters[id] = 0
 
-                if absence_counters.get(id, 0) >= 40:
+                if absence_counters.get(id, 0) >= class_threshold[class_name]:
                     class_nam = [item[0] for item in tracker_list if item[1] == id]
                     class_name = class_nam[0]
                     if class_name in class_counters:
@@ -134,12 +149,19 @@ def process_video(video_cap, writer, model, encoder, tracker, class_names, color
                     tracker_list = [item for item in tracker_list if item[1] != id]
 
         cv2.fillPoly(frame, [np.array([(0, 0), (0, 120), (200, 120), (200, 0)])], (0, 0, 0))
-        cv2.putText(frame, f"Car Count: {class_counters['car']}", (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-        cv2.putText(frame, f"Bus Count: {class_counters['bus']}", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+        cv2.putText(frame, f"Car Count: {class_counters['car']}", (20, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 2)
+        cv2.putText(frame, f"Bus Count: {class_counters['bus']}", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 100, 100), 2)
         cv2.putText(frame, f"Motorcycle Count: {class_counters['motorcycle']}", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5,(255, 0, 255), 2)
         cv2.putText(frame, f"Truck Count: {class_counters['truck']}", (20, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255),2)
         cv2.putText(frame, f"Total vehicles: {len(active_track_ids)}", (20, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
-                    (255, 255, 0),2)
+                    (255, 255, 0), 2)
+        print('active vehicles in region of interest: ', tracker_list)
+
+        test_traffic(tracker_list, frame, traffic_threshold=traffic_threshold)
+
+        with open(log_file_path, 'a') as log_file:
+            log_file.write(
+                f"Date: {start}, Total vehicles in frame: {len(active_track_ids)}, ROI vehicle data: {tracker_list}\n")
 
         cv2.imshow("Output", frame)
         writer.write(frame)

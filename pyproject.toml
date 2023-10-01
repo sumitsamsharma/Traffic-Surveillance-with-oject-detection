@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "real-time-vehicle-detection-tracking-and-counting-in-python-main"
+version = "0.1.0"
+description = ""
+authors = ["Sumit Sharma <sumit.sharma@kalibrate.com >"]
+readme = "README.md"
+packages = [{include = "real_time_vehicle_detection_tracking_and_counting_in_python_main"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+numpy = "^1.25.2"
+cv = "^1.0.0"
+ultralytics = "^8.0.157"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

@@ -8,15 +8,14 @@ nn_budget = None
 
 
 def initialize_yolo_model():
-    model = YOLO('C:/MSc Project 2/dataset/roboflow/runs/detect/my_model34/weights/last.pt')
+    model = YOLO('dataset/roboflow/runs/detect/my_model34/weights/last.pt')
     return model
 
 
 # Initialize the deep sort tracker
 def initialize_deep_sort_tracker():
-    model_filename = "C:/Users/SharmaS/Downloads/vehice msc project/msc project vehicle/config/mars-small128.pb"
+    model_filename = "config/mars-small128.pb"
     encoder = gdet.create_box_encoder(model_filename, batch_size=1)
-    metric = nn_matching.NearestNeighborDistanceMetric(
-        "cosine", max_cosine_distance, nn_budget)
+    metric = nn_matching.NearestNeighborDistanceMetric("cosine", max_cosine_distance, nn_budget)
     tracker = Tracker(metric)
     return encoder, tracker

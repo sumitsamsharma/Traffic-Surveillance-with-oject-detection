@@ -12,11 +12,13 @@ def main():
     model = initialize_yolo_model()
     encoder, tracker = initialize_deep_sort_tracker()
     class_names = ['bus', 'car', 'motorcycle', 'truck', 'threewheel', 'van', 'Hiace', 'Rickshaw', 'Tractor', 'vehicle']
+    #class_names = ['bus', 'car', 'motorcycle', 'truck']
     colors = create_random_colors(class_names)
     process_video(video_cap, writer, model, encoder, tracker, class_names, colors)
     video_cap.release()
     writer.release()
     cv2.destroyAllWindows()
+
 
 if __name__ == "__main__":
     main()
